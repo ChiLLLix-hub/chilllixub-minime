@@ -24,16 +24,35 @@ local Config = {
     }
 }
 
+-- Check if SetPedScale is available (requires FiveM build 5848+)
+-- Using lazy initialization to avoid checking too early before natives are loaded
+local hasPedScaling = nil  -- nil = not checked yet, true = available, false = not available
+
+-- Helper function to safely set ped scale
+local function SafeSetPedScale(ped, scale)
+    -- Check on first use (lazy initialization)
+    if hasPedScaling == nil then
+        hasPedScaling = SetPedScale ~= nil
+        if not hasPedScaling then
+            print('[MiniMe] Warning: SetPedScale is not available in this FiveM build. Ped scaling will be disabled. To enable ped scaling, update your FiveM server to artifact 5848 or later.')
+        end
+    end
+    
+    if hasPedScaling then
+        SetPedScale(ped, scale)
+    end
+end
+
 -- Function to get player's appearance data (works with qb-clothing, illenium-appearance, or fivem-appearance)
 local function GetPlayerAppearance()
     local appearance = nil
     
-    -- Try different appearance systems
-    if exports['qb-clothing'] then
+    -- Try different appearance systems by checking if resource is started
+    if GetResourceState('qb-clothing') == 'started' then
         appearance = exports['qb-clothing']:GetCurrentAppearance()
-    elseif exports['illenium-appearance'] then
-        appearance = exports['illenium-appearance']:GetAppearance()
-    elseif exports['fivem-appearance'] then
+    elseif GetResourceState('illenium-appearance') == 'started' then
+        appearance = exports['illenium-appearance']:getPedAppearance(PlayerPedId())
+    elseif GetResourceState('fivem-appearance') == 'started' then
         appearance = exports['fivem-appearance']:GetAppearance()
     end
     
@@ -208,7 +227,7 @@ function SpawnMiniPed(scale, boneIndex, offset, animKey)
     -- Set scale
     scale = scale or Config.DefaultScale
     scale = math.max(Config.MinScale, math.min(Config.MaxScale, scale))
-    SetPedScale(ped, scale)
+    SafeSetPedScale(ped, scale)
     
     -- Attach to bone if specified
     if boneIndex then
@@ -303,7 +322,7 @@ function SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, ap
     -- Set scale
     scale = scale or Config.DefaultScale
     scale = math.max(Config.MinScale, math.min(Config.MaxScale, scale))
-    SetPedScale(ped, scale)
+    SafeSetPedScale(ped, scale)
     
     -- Attach to bone if specified
     if boneIndex then
@@ -338,7 +357,7 @@ function UpdatePedScale(pedId, newScale)
     local myServerId = GetPlayerServerId(PlayerId())
     if spawnedPeds[myServerId] and spawnedPeds[myServerId][pedId] and DoesEntityExist(spawnedPeds[myServerId][pedId].ped) then
         newScale = math.max(Config.MinScale, math.min(Config.MaxScale, newScale))
-        SetPedScale(spawnedPeds[myServerId][pedId].ped, newScale)
+        SafeSetPedScale(spawnedPeds[myServerId][pedId].ped, newScale)
         spawnedPeds[myServerId][pedId].scale = newScale
         
         -- Trigger server event to broadcast to other clients
@@ -455,7 +474,7 @@ RegisterNetEvent('minime:client:updateScale', function(serverSource, pedId, newS
         local ped = spawnedPeds[serverSource][pedId].ped
         if DoesEntityExist(ped) then
             newScale = math.max(Config.MinScale, math.min(Config.MaxScale, newScale))
-            SetPedScale(ped, newScale)
+            SafeSetPedScale(ped, newScale)
             spawnedPeds[serverSource][pedId].scale = newScale
         end
     end
