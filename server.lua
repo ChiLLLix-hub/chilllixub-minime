@@ -19,7 +19,7 @@ local function BroadcastToAll(eventName, ...)
 end
 
 -- Spawn mini ped
-RegisterNetEvent('minime:server:spawn', function(pedId, scale, boneIndex, offset, appearance)
+RegisterNetEvent('minime:server:spawn', function(pedId, scale, boneIndex, offset, appearance, animKey)
     local src = source
     
     -- Initialize player's ped table if it doesn't exist
@@ -32,13 +32,14 @@ RegisterNetEvent('minime:server:spawn', function(pedId, scale, boneIndex, offset
         scale = scale,
         boneIndex = boneIndex,
         offset = offset,
-        appearance = appearance
+        appearance = appearance,
+        animKey = animKey
     }
     
     -- Broadcast to all other clients
-    BroadcastToOthers(src, 'minime:client:spawn', src, pedId, scale, boneIndex, offset, appearance)
+    BroadcastToOthers(src, 'minime:client:spawn', src, pedId, scale, boneIndex, offset, appearance, animKey)
     
-    print(string.format('[MiniMe] Player %d spawned mini ped %d', src, pedId))
+    print(string.format('[MiniMe] Player %d spawned mini ped %d with animation: %s', src, pedId, animKey or 'none'))
 end)
 
 -- Update mini ped scale
@@ -69,6 +70,21 @@ RegisterNetEvent('minime:server:updateAttachment', function(pedId, boneIndex, of
         BroadcastToOthers(src, 'minime:client:updateAttachment', src, pedId, boneIndex, offset)
         
         print(string.format('[MiniMe] Player %d updated attachment for ped %d', src, pedId))
+    end
+end)
+
+-- Update mini ped animation
+RegisterNetEvent('minime:server:updateAnimation', function(pedId, animKey)
+    local src = source
+    
+    if activePeds[src] and activePeds[src][pedId] then
+        -- Update stored data
+        activePeds[src][pedId].animKey = animKey
+        
+        -- Broadcast to all other clients
+        BroadcastToOthers(src, 'minime:client:updateAnimation', src, pedId, animKey)
+        
+        print(string.format('[MiniMe] Player %d updated animation for ped %d to: %s', src, pedId, animKey or 'none'))
     end
 end)
 
