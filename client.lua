@@ -27,19 +27,15 @@ local Config = {
 -- Check if SetPedScale is available (requires FiveM build 5848+)
 local hasPedScaling = SetPedScale ~= nil
 if not hasPedScaling then
-    print('[MiniMe] Warning: SetPedScale is not available in this FiveM build. Ped scaling will be disabled.')
-    print('[MiniMe] To enable ped scaling, update your FiveM server to artifact 5848 or later.')
+    print('[MiniMe] Warning: SetPedScale is not available in this FiveM build. Ped scaling will be disabled. To enable ped scaling, update your FiveM server to artifact 5848 or later.')
 end
 
 -- Helper function to safely set ped scale
 local function SafeSetPedScale(ped, scale)
     if hasPedScaling then
         SetPedScale(ped, scale)
-        return true
-    else
-        -- Scaling not available in this build
-        return false
     end
+    -- Silently skip if not available
 end
 
 -- Function to get player's appearance data (works with qb-clothing, illenium-appearance, or fivem-appearance)
