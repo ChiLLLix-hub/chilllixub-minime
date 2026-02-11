@@ -32,7 +32,7 @@ local function GetPlayerAppearance()
     if GetResourceState('qb-clothing') == 'started' then
         appearance = exports['qb-clothing']:GetCurrentAppearance()
     elseif GetResourceState('illenium-appearance') == 'started' then
-        appearance = exports['illenium-appearance']:GetAppearance()
+        appearance = exports['illenium-appearance']:getPedAppearance(PlayerPedId())
     elseif GetResourceState('fivem-appearance') == 'started' then
         appearance = exports['fivem-appearance']:GetAppearance()
     end
