@@ -1,5 +1,8 @@
 local QBCore = exports['qb-core']:GetCoreObject()
+-- Store peds by player server ID and ped ID
+-- Format: spawnedPeds[serverSource][pedId] = {ped, scale, boneIndex, offset}
 local spawnedPeds = {}
+local myServerId = GetPlayerServerId(PlayerId())
 
 -- Configuration
 local Config = {
@@ -120,7 +123,7 @@ local function ApplyAppearanceToPed(ped, appearance)
     return true
 end
 
--- Function to spawn a mini ped
+-- Function to spawn a mini ped (for own player)
 function SpawnMiniPed(scale, boneIndex, offset)
     local playerPed = PlayerPedId()
     local playerCoords = GetEntityCoords(playerPed)
@@ -163,24 +166,110 @@ function SpawnMiniPed(scale, boneIndex, offset)
         AttachEntityToEntity(ped, playerPed, bone, offset.x, offset.y, offset.z, 0.0, 0.0, 0.0, false, false, false, false, 2, true)
     end
     
+    -- Initialize own player's ped table
+    if not spawnedPeds[myServerId] then
+        spawnedPeds[myServerId] = {}
+    end
+    
     -- Store ped data
-    local pedId = #spawnedPeds + 1
-    spawnedPeds[pedId] = {
+    local pedId = 1
+    for i = 1, 999 do
+        if not spawnedPeds[myServerId][i] then
+            pedId = i
+            break
+        end
+    end
+    
+    spawnedPeds[myServerId][pedId] = {
         ped = ped,
         scale = scale,
         boneIndex = boneIndex,
         offset = offset
     }
     
+    -- Trigger server event to broadcast to other clients
+    TriggerServerEvent('minime:server:spawn', pedId, scale, boneIndex, offset, appearance)
+    
     return pedId
+end
+
+-- Function to spawn a mini ped for another player
+function SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, appearance)
+    -- Don't spawn own peds via this function
+    if serverSource == myServerId then
+        return
+    end
+    
+    -- Get the target player
+    local targetPlayer = GetPlayerFromServerId(serverSource)
+    if targetPlayer == -1 then return end
+    
+    local targetPed = GetPlayerPed(targetPlayer)
+    if not DoesEntityExist(targetPed) then return end
+    
+    local targetCoords = GetEntityCoords(targetPed)
+    local targetModel = GetEntityModel(targetPed)
+    
+    -- Request the model
+    RequestModel(targetModel)
+    while not HasModelLoaded(targetModel) do
+        Wait(10)
+    end
+    
+    -- Create the ped
+    local ped = CreatePed(4, targetModel, targetCoords.x, targetCoords.y, targetCoords.z, 0.0, false, true)
+    
+    -- Configure ped
+    SetEntityAsMissionEntity(ped, true, true)
+    SetBlockingOfNonTemporaryEvents(ped, true)
+    SetPedFleeAttributes(ped, 0, false)
+    SetPedCombatAttributes(ped, 17, true)
+    SetPedCanRagdoll(ped, false)
+    FreezeEntityPosition(ped, true)
+    SetEntityInvincible(ped, true)
+    SetEntityCollision(ped, false, false)
+    
+    -- Apply appearance if provided
+    if appearance then
+        ApplyAppearanceToPed(ped, appearance)
+    end
+    
+    -- Set scale
+    scale = scale or Config.DefaultScale
+    scale = math.max(Config.MinScale, math.min(Config.MaxScale, scale))
+    SetPedScale(ped, scale)
+    
+    -- Attach to bone if specified
+    if boneIndex then
+        offset = offset or vector3(0.0, 0.0, 0.0)
+        local bone = GetPedBoneIndex(targetPed, boneIndex)
+        AttachEntityToEntity(ped, targetPed, bone, offset.x, offset.y, offset.z, 0.0, 0.0, 0.0, false, false, false, false, 2, true)
+    end
+    
+    -- Initialize player's ped table
+    if not spawnedPeds[serverSource] then
+        spawnedPeds[serverSource] = {}
+    end
+    
+    -- Store ped data
+    spawnedPeds[serverSource][pedId] = {
+        ped = ped,
+        scale = scale,
+        boneIndex = boneIndex,
+        offset = offset
+    }
 end
 
 -- Function to update ped scale
 function UpdatePedScale(pedId, newScale)
-    if spawnedPeds[pedId] and DoesEntityExist(spawnedPeds[pedId].ped) then
+    if spawnedPeds[myServerId] and spawnedPeds[myServerId][pedId] and DoesEntityExist(spawnedPeds[myServerId][pedId].ped) then
         newScale = math.max(Config.MinScale, math.min(Config.MaxScale, newScale))
-        SetPedScale(spawnedPeds[pedId].ped, newScale)
-        spawnedPeds[pedId].scale = newScale
+        SetPedScale(spawnedPeds[myServerId][pedId].ped, newScale)
+        spawnedPeds[myServerId][pedId].scale = newScale
+        
+        -- Trigger server event to broadcast to other clients
+        TriggerServerEvent('minime:server:updateScale', pedId, newScale)
+        
         return true
     end
     return false
@@ -188,9 +277,9 @@ end
 
 -- Function to update ped attachment
 function UpdatePedAttachment(pedId, boneIndex, offset)
-    if spawnedPeds[pedId] and DoesEntityExist(spawnedPeds[pedId].ped) then
+    if spawnedPeds[myServerId] and spawnedPeds[myServerId][pedId] and DoesEntityExist(spawnedPeds[myServerId][pedId].ped) then
         local playerPed = PlayerPedId()
-        local ped = spawnedPeds[pedId].ped
+        local ped = spawnedPeds[myServerId][pedId].ped
         
         -- Detach if currently attached
         DetachEntity(ped, true, false)
@@ -201,9 +290,12 @@ function UpdatePedAttachment(pedId, boneIndex, offset)
             local bone = GetPedBoneIndex(playerPed, boneIndex)
             AttachEntityToEntity(ped, playerPed, bone, offset.x, offset.y, offset.z, 0.0, 0.0, 0.0, false, false, false, false, 2, true)
             
-            spawnedPeds[pedId].boneIndex = boneIndex
-            spawnedPeds[pedId].offset = offset
+            spawnedPeds[myServerId][pedId].boneIndex = boneIndex
+            spawnedPeds[myServerId][pedId].offset = offset
         end
+        
+        -- Trigger server event to broadcast to other clients
+        TriggerServerEvent('minime:server:updateAttachment', pedId, boneIndex, offset)
         
         return true
     end
@@ -212,9 +304,13 @@ end
 
 -- Function to delete a spawned ped
 function DeleteMiniPed(pedId)
-    if spawnedPeds[pedId] and DoesEntityExist(spawnedPeds[pedId].ped) then
-        DeleteEntity(spawnedPeds[pedId].ped)
-        spawnedPeds[pedId] = nil
+    if spawnedPeds[myServerId] and spawnedPeds[myServerId][pedId] and DoesEntityExist(spawnedPeds[myServerId][pedId].ped) then
+        DeleteEntity(spawnedPeds[myServerId][pedId].ped)
+        spawnedPeds[myServerId][pedId] = nil
+        
+        -- Trigger server event to broadcast to other clients
+        TriggerServerEvent('minime:server:delete', pedId)
+        
         return true
     end
     return false
@@ -222,13 +318,97 @@ end
 
 -- Function to delete all spawned peds
 function DeleteAllMiniPeds()
-    for pedId, data in pairs(spawnedPeds) do
-        if DoesEntityExist(data.ped) then
-            DeleteEntity(data.ped)
+    if spawnedPeds[myServerId] then
+        for pedId, data in pairs(spawnedPeds[myServerId]) do
+            if DoesEntityExist(data.ped) then
+                DeleteEntity(data.ped)
+            end
+        end
+        spawnedPeds[myServerId] = {}
+    end
+    
+    -- Trigger server event to broadcast to other clients
+    TriggerServerEvent('minime:server:deleteAll')
+end
+
+-- Client event handlers for network synchronization
+
+-- Spawn mini ped for another player
+RegisterNetEvent('minime:client:spawn', function(serverSource, pedId, scale, boneIndex, offset, appearance)
+    SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, appearance)
+end)
+
+-- Update scale for another player's mini ped
+RegisterNetEvent('minime:client:updateScale', function(serverSource, pedId, newScale)
+    if spawnedPeds[serverSource] and spawnedPeds[serverSource][pedId] then
+        local ped = spawnedPeds[serverSource][pedId].ped
+        if DoesEntityExist(ped) then
+            newScale = math.max(Config.MinScale, math.min(Config.MaxScale, newScale))
+            SetPedScale(ped, newScale)
+            spawnedPeds[serverSource][pedId].scale = newScale
         end
     end
-    spawnedPeds = {}
-end
+end)
+
+-- Update attachment for another player's mini ped
+RegisterNetEvent('minime:client:updateAttachment', function(serverSource, pedId, boneIndex, offset)
+    if spawnedPeds[serverSource] and spawnedPeds[serverSource][pedId] then
+        local ped = spawnedPeds[serverSource][pedId].ped
+        if DoesEntityExist(ped) then
+            -- Get the target player
+            local targetPlayer = GetPlayerFromServerId(serverSource)
+            if targetPlayer ~= -1 then
+                local targetPed = GetPlayerPed(targetPlayer)
+                if DoesEntityExist(targetPed) then
+                    -- Detach if currently attached
+                    DetachEntity(ped, true, false)
+                    
+                    -- Attach to new bone
+                    if boneIndex then
+                        offset = offset or vector3(0.0, 0.0, 0.0)
+                        local bone = GetPedBoneIndex(targetPed, boneIndex)
+                        AttachEntityToEntity(ped, targetPed, bone, offset.x, offset.y, offset.z, 0.0, 0.0, 0.0, false, false, false, false, 2, true)
+                        
+                        spawnedPeds[serverSource][pedId].boneIndex = boneIndex
+                        spawnedPeds[serverSource][pedId].offset = offset
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Delete another player's mini ped
+RegisterNetEvent('minime:client:delete', function(serverSource, pedId)
+    if spawnedPeds[serverSource] and spawnedPeds[serverSource][pedId] then
+        local ped = spawnedPeds[serverSource][pedId].ped
+        if DoesEntityExist(ped) then
+            DeleteEntity(ped)
+        end
+        spawnedPeds[serverSource][pedId] = nil
+    end
+end)
+
+-- Delete all mini peds for a specific player
+RegisterNetEvent('minime:client:deleteAllForPlayer', function(serverSource)
+    if spawnedPeds[serverSource] then
+        for pedId, data in pairs(spawnedPeds[serverSource]) do
+            if DoesEntityExist(data.ped) then
+                DeleteEntity(data.ped)
+            end
+        end
+        spawnedPeds[serverSource] = nil
+    end
+end)
+
+-- Sync all active mini peds (for newly connected clients)
+RegisterNetEvent('minime:client:syncAll', function(allPeds)
+    for serverSource, peds in pairs(allPeds) do
+        for pedId, data in pairs(peds) do
+            SpawnMiniPedForPlayer(serverSource, pedId, data.scale, data.boneIndex, data.offset, data.appearance)
+        end
+    end
+end)
 
 -- Commands for testing
 RegisterCommand('spawnminime', function(source, args)
@@ -288,8 +468,22 @@ end)
 -- Cleanup on resource stop
 AddEventHandler('onResourceStop', function(resourceName)
     if GetCurrentResourceName() == resourceName then
-        DeleteAllMiniPeds()
+        -- Delete all peds for all players
+        for serverSource, peds in pairs(spawnedPeds) do
+            for pedId, data in pairs(peds) do
+                if DoesEntityExist(data.ped) then
+                    DeleteEntity(data.ped)
+                end
+            end
+        end
+        spawnedPeds = {}
     end
+end)
+
+-- Request sync when resource starts
+CreateThread(function()
+    Wait(1000) -- Wait a bit for server to be ready
+    TriggerServerEvent('minime:server:requestSync')
 end)
 
 -- Export functions for use in other scripts
