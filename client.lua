@@ -10,6 +10,8 @@ local Config = {
     MaxScale = 2.0,
     MaxPedId = 999,
     SyncDelayMs = 1000,
+    AnimationApplyDelayMs = 100,  -- Delay before applying animation to ensure ped is ready
+    AnimDictLoadTimeout = 100,     -- Maximum attempts to load animation dictionary
     -- Predefined animations/scenarios
     Animations = {
         sitchair = {type = "scenario", name = "PROP_HUMAN_SEAT_CHAIR"},
@@ -50,9 +52,20 @@ local function ApplyAnimationToPed(ped, animKey)
     elseif animData.type == "anim" then
         -- Request animation dictionary
         RequestAnimDict(animData.dict)
-        while not HasAnimDictLoaded(animData.dict) do
+        
+        -- Wait for dictionary to load with timeout
+        local attempts = 0
+        while not HasAnimDictLoaded(animData.dict) and attempts < Config.AnimDictLoadTimeout do
             Wait(10)
+            attempts = attempts + 1
         end
+        
+        -- Check if loading failed
+        if not HasAnimDictLoaded(animData.dict) then
+            print(string.format('[MiniMe] Failed to load animation dictionary: %s', animData.dict))
+            return false
+        end
+        
         -- Play animation
         TaskPlayAnim(ped, animData.dict, animData.anim, 8.0, -8.0, -1, animData.flags or 1, 0, false, false, false)
     end
@@ -207,7 +220,7 @@ function SpawnMiniPed(scale, boneIndex, offset, animKey)
     -- Apply animation if specified
     if animKey then
         -- Wait a bit for ped to be fully set up
-        Wait(100)
+        Wait(Config.AnimationApplyDelayMs)
         ApplyAnimationToPed(ped, animKey)
     end
     
@@ -301,7 +314,7 @@ function SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, ap
     
     -- Apply animation if specified
     if animKey then
-        Wait(100)
+        Wait(Config.AnimationApplyDelayMs)
         ApplyAnimationToPed(ped, animKey)
     end
     
@@ -580,7 +593,7 @@ RegisterCommand('animminime', function(source, args)
     
     if not pedId then
         QBCore.Functions.Notify('Usage: /animminime [pedId] [animKey]', 'error')
-        QBCore.Functions.Notify('Available animations: sitchair, sitchair2, salute, wave, dance, smoke, guard', 'info')
+        QBCore.Functions.Notify('Use /listanims to see available animations', 'info')
         return
     end
     
