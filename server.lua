@@ -1,5 +1,3 @@
-local QBCore = exports['qb-core']:GetCoreObject()
-
 -- Store all active mini peds
 -- Format: activePeds[serverSource][pedId] = {scale, boneIndex, offset, appearance}
 local activePeds = {}

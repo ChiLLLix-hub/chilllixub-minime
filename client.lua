@@ -2,13 +2,14 @@ local QBCore = exports['qb-core']:GetCoreObject()
 -- Store peds by player server ID and ped ID
 -- Format: spawnedPeds[serverSource][pedId] = {ped, scale, boneIndex, offset}
 local spawnedPeds = {}
-local myServerId = GetPlayerServerId(PlayerId())
 
 -- Configuration
 local Config = {
     DefaultScale = 1.0,
     MinScale = 0.1,
-    MaxScale = 2.0
+    MaxScale = 2.0,
+    MaxPedId = 999,
+    SyncDelayMs = 1000
 }
 
 -- Function to get player's appearance data (works with qb-clothing, illenium-appearance, or fivem-appearance)
@@ -167,13 +168,14 @@ function SpawnMiniPed(scale, boneIndex, offset)
     end
     
     -- Initialize own player's ped table
+    local myServerId = GetPlayerServerId(PlayerId())
     if not spawnedPeds[myServerId] then
         spawnedPeds[myServerId] = {}
     end
     
     -- Store ped data
     local pedId = 1
-    for i = 1, 999 do
+    for i = 1, Config.MaxPedId do
         if not spawnedPeds[myServerId][i] then
             pedId = i
             break
@@ -196,6 +198,7 @@ end
 -- Function to spawn a mini ped for another player
 function SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, appearance)
     -- Don't spawn own peds via this function
+    local myServerId = GetPlayerServerId(PlayerId())
     if serverSource == myServerId then
         return
     end
@@ -262,6 +265,7 @@ end
 
 -- Function to update ped scale
 function UpdatePedScale(pedId, newScale)
+    local myServerId = GetPlayerServerId(PlayerId())
     if spawnedPeds[myServerId] and spawnedPeds[myServerId][pedId] and DoesEntityExist(spawnedPeds[myServerId][pedId].ped) then
         newScale = math.max(Config.MinScale, math.min(Config.MaxScale, newScale))
         SetPedScale(spawnedPeds[myServerId][pedId].ped, newScale)
@@ -277,6 +281,7 @@ end
 
 -- Function to update ped attachment
 function UpdatePedAttachment(pedId, boneIndex, offset)
+    local myServerId = GetPlayerServerId(PlayerId())
     if spawnedPeds[myServerId] and spawnedPeds[myServerId][pedId] and DoesEntityExist(spawnedPeds[myServerId][pedId].ped) then
         local playerPed = PlayerPedId()
         local ped = spawnedPeds[myServerId][pedId].ped
@@ -304,6 +309,7 @@ end
 
 -- Function to delete a spawned ped
 function DeleteMiniPed(pedId)
+    local myServerId = GetPlayerServerId(PlayerId())
     if spawnedPeds[myServerId] and spawnedPeds[myServerId][pedId] and DoesEntityExist(spawnedPeds[myServerId][pedId].ped) then
         DeleteEntity(spawnedPeds[myServerId][pedId].ped)
         spawnedPeds[myServerId][pedId] = nil
@@ -318,6 +324,7 @@ end
 
 -- Function to delete all spawned peds
 function DeleteAllMiniPeds()
+    local myServerId = GetPlayerServerId(PlayerId())
     if spawnedPeds[myServerId] then
         for pedId, data in pairs(spawnedPeds[myServerId]) do
             if DoesEntityExist(data.ped) then
@@ -482,7 +489,7 @@ end)
 
 -- Request sync when resource starts
 CreateThread(function()
-    Wait(1000) -- Wait a bit for server to be ready
+    Wait(Config.SyncDelayMs)
     TriggerServerEvent('minime:server:requestSync')
 end)
 
