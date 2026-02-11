@@ -28,12 +28,12 @@ local Config = {
 local function GetPlayerAppearance()
     local appearance = nil
     
-    -- Try different appearance systems
-    if exports['qb-clothing'] then
+    -- Try different appearance systems by checking if resource is started
+    if GetResourceState('qb-clothing') == 'started' then
         appearance = exports['qb-clothing']:GetCurrentAppearance()
-    elseif exports['illenium-appearance'] then
+    elseif GetResourceState('illenium-appearance') == 'started' then
         appearance = exports['illenium-appearance']:GetAppearance()
-    elseif exports['fivem-appearance'] then
+    elseif GetResourceState('fivem-appearance') == 'started' then
         appearance = exports['fivem-appearance']:GetAppearance()
     end
     
