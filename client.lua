@@ -9,7 +9,19 @@ local Config = {
     MinScale = 0.1,
     MaxScale = 2.0,
     MaxPedId = 999,
-    SyncDelayMs = 1000
+    SyncDelayMs = 1000,
+    AnimationApplyDelayMs = 100,  -- Delay before applying animation to ensure ped is ready
+    AnimDictLoadTimeout = 100,     -- Maximum attempts to load animation dictionary
+    -- Predefined animations/scenarios
+    Animations = {
+        sitchair = {type = "scenario", name = "PROP_HUMAN_SEAT_CHAIR"},
+        sitchair2 = {type = "scenario", name = "WORLD_HUMAN_PICNIC"},
+        salute = {type = "anim", dict = "mp_player_int_uppersalute", anim = "mp_player_int_salute", flags = 49},
+        wave = {type = "anim", dict = "friends@frj@ig_1", anim = "wave_a", flags = 49},
+        dance = {type = "anim", dict = "anim@mp_player_intcelebrationmale@salsa_roll", anim = "salsa_roll", flags = 1},
+        smoke = {type = "scenario", name = "WORLD_HUMAN_SMOKING"},
+        guard = {type = "scenario", name = "WORLD_HUMAN_GUARD_STAND"}
+    }
 }
 
 -- Function to get player's appearance data (works with qb-clothing, illenium-appearance, or fivem-appearance)
@@ -26,6 +38,39 @@ local function GetPlayerAppearance()
     end
     
     return appearance
+end
+
+-- Function to apply animation or scenario to ped
+local function ApplyAnimationToPed(ped, animKey)
+    if not animKey or not Config.Animations[animKey] then return false end
+    
+    local animData = Config.Animations[animKey]
+    
+    if animData.type == "scenario" then
+        -- Apply scenario (like sitting, smoking, etc.)
+        TaskStartScenarioInPlace(ped, animData.name, 0, true)
+    elseif animData.type == "anim" then
+        -- Request animation dictionary
+        RequestAnimDict(animData.dict)
+        
+        -- Wait for dictionary to load with timeout
+        local attempts = 0
+        while not HasAnimDictLoaded(animData.dict) and attempts < Config.AnimDictLoadTimeout do
+            Wait(10)
+            attempts = attempts + 1
+        end
+        
+        -- Check if loading failed
+        if not HasAnimDictLoaded(animData.dict) then
+            print(string.format('[MiniMe] Failed to load animation dictionary: %s', animData.dict))
+            return false
+        end
+        
+        -- Play animation
+        TaskPlayAnim(ped, animData.dict, animData.anim, 8.0, -8.0, -1, animData.flags or 1, 0, false, false, false)
+    end
+    
+    return true
 end
 
 -- Function to apply appearance to ped
@@ -125,7 +170,7 @@ local function ApplyAppearanceToPed(ped, appearance)
 end
 
 -- Function to spawn a mini ped (for own player)
-function SpawnMiniPed(scale, boneIndex, offset)
+function SpawnMiniPed(scale, boneIndex, offset, animKey)
     local playerPed = PlayerPedId()
     local playerCoords = GetEntityCoords(playerPed)
     local playerModel = GetEntityModel(playerPed)
@@ -145,7 +190,12 @@ function SpawnMiniPed(scale, boneIndex, offset)
     SetPedFleeAttributes(ped, 0, false)
     SetPedCombatAttributes(ped, 17, true)
     SetPedCanRagdoll(ped, false)
-    FreezeEntityPosition(ped, true)
+    
+    -- Don't freeze if animation is applied (animations need movement)
+    if not animKey then
+        FreezeEntityPosition(ped, true)
+    end
+    
     SetEntityInvincible(ped, true)
     SetEntityCollision(ped, false, false)
     
@@ -167,6 +217,13 @@ function SpawnMiniPed(scale, boneIndex, offset)
         AttachEntityToEntity(ped, playerPed, bone, offset.x, offset.y, offset.z, 0.0, 0.0, 0.0, false, false, false, false, 2, true)
     end
     
+    -- Apply animation if specified
+    if animKey then
+        -- Wait a bit for ped to be fully set up
+        Wait(Config.AnimationApplyDelayMs)
+        ApplyAnimationToPed(ped, animKey)
+    end
+    
     -- Initialize own player's ped table
     local myServerId = GetPlayerServerId(PlayerId())
     if not spawnedPeds[myServerId] then
@@ -186,17 +243,18 @@ function SpawnMiniPed(scale, boneIndex, offset)
         ped = ped,
         scale = scale,
         boneIndex = boneIndex,
-        offset = offset
+        offset = offset,
+        animKey = animKey
     }
     
     -- Trigger server event to broadcast to other clients
-    TriggerServerEvent('minime:server:spawn', pedId, scale, boneIndex, offset, appearance)
+    TriggerServerEvent('minime:server:spawn', pedId, scale, boneIndex, offset, appearance, animKey)
     
     return pedId
 end
 
 -- Function to spawn a mini ped for another player
-function SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, appearance)
+function SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, appearance, animKey)
     -- Don't spawn own peds via this function
     local myServerId = GetPlayerServerId(PlayerId())
     if serverSource == myServerId then
@@ -228,7 +286,12 @@ function SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, ap
     SetPedFleeAttributes(ped, 0, false)
     SetPedCombatAttributes(ped, 17, true)
     SetPedCanRagdoll(ped, false)
-    FreezeEntityPosition(ped, true)
+    
+    -- Don't freeze if animation is applied
+    if not animKey then
+        FreezeEntityPosition(ped, true)
+    end
+    
     SetEntityInvincible(ped, true)
     SetEntityCollision(ped, false, false)
     
@@ -249,6 +312,12 @@ function SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, ap
         AttachEntityToEntity(ped, targetPed, bone, offset.x, offset.y, offset.z, 0.0, 0.0, 0.0, false, false, false, false, 2, true)
     end
     
+    -- Apply animation if specified
+    if animKey then
+        Wait(Config.AnimationApplyDelayMs)
+        ApplyAnimationToPed(ped, animKey)
+    end
+    
     -- Initialize player's ped table
     if not spawnedPeds[serverSource] then
         spawnedPeds[serverSource] = {}
@@ -259,7 +328,8 @@ function SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, ap
         ped = ped,
         scale = scale,
         boneIndex = boneIndex,
-        offset = offset
+        offset = offset,
+        animKey = animKey
     }
 end
 
@@ -307,6 +377,40 @@ function UpdatePedAttachment(pedId, boneIndex, offset)
     return false
 end
 
+-- Function to update ped animation
+function UpdatePedAnimation(pedId, animKey)
+    local myServerId = GetPlayerServerId(PlayerId())
+    if spawnedPeds[myServerId] and spawnedPeds[myServerId][pedId] and DoesEntityExist(spawnedPeds[myServerId][pedId].ped) then
+        local ped = spawnedPeds[myServerId][pedId].ped
+        
+        -- Clear existing animation/scenario
+        ClearPedTasks(ped)
+        
+        -- Apply new animation
+        if animKey and ApplyAnimationToPed(ped, animKey) then
+            spawnedPeds[myServerId][pedId].animKey = animKey
+            
+            -- Unfreeze ped if animation is applied
+            FreezeEntityPosition(ped, false)
+            
+            -- Trigger server event to broadcast to other clients
+            TriggerServerEvent('minime:server:updateAnimation', pedId, animKey)
+            
+            return true
+        else
+            -- Clear animation means freeze again
+            spawnedPeds[myServerId][pedId].animKey = nil
+            FreezeEntityPosition(ped, true)
+            
+            -- Trigger server event to broadcast to other clients
+            TriggerServerEvent('minime:server:updateAnimation', pedId, nil)
+        end
+        
+        return true
+    end
+    return false
+end
+
 -- Function to delete a spawned ped
 function DeleteMiniPed(pedId)
     local myServerId = GetPlayerServerId(PlayerId())
@@ -341,8 +445,8 @@ end
 -- Client event handlers for network synchronization
 
 -- Spawn mini ped for another player
-RegisterNetEvent('minime:client:spawn', function(serverSource, pedId, scale, boneIndex, offset, appearance)
-    SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, appearance)
+RegisterNetEvent('minime:client:spawn', function(serverSource, pedId, scale, boneIndex, offset, appearance, animKey)
+    SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, appearance, animKey)
 end)
 
 -- Update scale for another player's mini ped
@@ -385,6 +489,27 @@ RegisterNetEvent('minime:client:updateAttachment', function(serverSource, pedId,
     end
 end)
 
+-- Update animation for another player's mini ped
+RegisterNetEvent('minime:client:updateAnimation', function(serverSource, pedId, animKey)
+    if spawnedPeds[serverSource] and spawnedPeds[serverSource][pedId] then
+        local ped = spawnedPeds[serverSource][pedId].ped
+        if DoesEntityExist(ped) then
+            -- Clear existing animation/scenario
+            ClearPedTasks(ped)
+            
+            -- Apply new animation
+            if animKey then
+                ApplyAnimationToPed(ped, animKey)
+                FreezeEntityPosition(ped, false)
+                spawnedPeds[serverSource][pedId].animKey = animKey
+            else
+                FreezeEntityPosition(ped, true)
+                spawnedPeds[serverSource][pedId].animKey = nil
+            end
+        end
+    end
+end)
+
 -- Delete another player's mini ped
 RegisterNetEvent('minime:client:delete', function(serverSource, pedId)
     if spawnedPeds[serverSource] and spawnedPeds[serverSource][pedId] then
@@ -412,7 +537,7 @@ end)
 RegisterNetEvent('minime:client:syncAll', function(allPeds)
     for serverSource, peds in pairs(allPeds) do
         for pedId, data in pairs(peds) do
-            SpawnMiniPedForPlayer(serverSource, pedId, data.scale, data.boneIndex, data.offset, data.appearance)
+            SpawnMiniPedForPlayer(serverSource, pedId, data.scale, data.boneIndex, data.offset, data.appearance, data.animKey)
         end
     end
 end)
@@ -422,18 +547,28 @@ RegisterCommand('spawnminime', function(source, args)
     local scale = tonumber(args[1]) or 0.3
     local boneIndex = tonumber(args[2]) or 24818 -- Default: head bone
     local offset = vector3(0.0, 0.0, tonumber(args[3]) or 0.3)
+    local animKey = args[4] -- Optional animation key
     
-    local pedId = SpawnMiniPed(scale, boneIndex, offset)
-    QBCore.Functions.Notify('Mini-me spawned! ID: ' .. pedId, 'success')
+    local pedId = SpawnMiniPed(scale, boneIndex, offset, animKey)
+    if animKey then
+        QBCore.Functions.Notify('Mini-me spawned with ' .. animKey .. ' animation! ID: ' .. pedId, 'success')
+    else
+        QBCore.Functions.Notify('Mini-me spawned! ID: ' .. pedId, 'success')
+    end
 end)
 
 RegisterCommand('spawnminime_shoulder', function(source, args)
     local scale = tonumber(args[1]) or 0.3
     local boneIndex = 64729 -- Right shoulder bone
     local offset = vector3(0.15, 0.0, 0.0)
+    local animKey = args[2] -- Optional animation key
     
-    local pedId = SpawnMiniPed(scale, boneIndex, offset)
-    QBCore.Functions.Notify('Mini-me spawned on shoulder! ID: ' .. pedId, 'success')
+    local pedId = SpawnMiniPed(scale, boneIndex, offset, animKey)
+    if animKey then
+        QBCore.Functions.Notify('Mini-me spawned on shoulder with ' .. animKey .. ' animation! ID: ' .. pedId, 'success')
+    else
+        QBCore.Functions.Notify('Mini-me spawned on shoulder! ID: ' .. pedId, 'success')
+    end
 end)
 
 RegisterCommand('scaleminime', function(source, args)
@@ -449,6 +584,34 @@ RegisterCommand('scaleminime', function(source, args)
         QBCore.Functions.Notify('Scale updated!', 'success')
     else
         QBCore.Functions.Notify('Invalid ped ID', 'error')
+    end
+end)
+
+RegisterCommand('animminime', function(source, args)
+    local pedId = tonumber(args[1])
+    local animKey = args[2]
+    
+    if not pedId then
+        QBCore.Functions.Notify('Usage: /animminime [pedId] [animKey]', 'error')
+        QBCore.Functions.Notify('Use /listanims to see available animations', 'info')
+        return
+    end
+    
+    if UpdatePedAnimation(pedId, animKey) then
+        if animKey then
+            QBCore.Functions.Notify('Animation "' .. animKey .. '" applied!', 'success')
+        else
+            QBCore.Functions.Notify('Animation cleared!', 'success')
+        end
+    else
+        QBCore.Functions.Notify('Invalid ped ID', 'error')
+    end
+end)
+
+RegisterCommand('listanims', function()
+    QBCore.Functions.Notify('Available animations:', 'info')
+    for key, _ in pairs(Config.Animations) do
+        QBCore.Functions.Notify('- ' .. key, 'info')
     end
 end)
 
@@ -497,5 +660,6 @@ end)
 exports('SpawnMiniPed', SpawnMiniPed)
 exports('UpdatePedScale', UpdatePedScale)
 exports('UpdatePedAttachment', UpdatePedAttachment)
+exports('UpdatePedAnimation', UpdatePedAnimation)
 exports('DeleteMiniPed', DeleteMiniPed)
 exports('DeleteAllMiniPeds', DeleteAllMiniPeds)
