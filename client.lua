@@ -24,6 +24,24 @@ local Config = {
     }
 }
 
+-- Check if SetPedScale is available (requires FiveM build 5848+)
+local hasPedScaling = SetPedScale ~= nil
+if not hasPedScaling then
+    print('[MiniMe] Warning: SetPedScale is not available in this FiveM build. Ped scaling will be disabled.')
+    print('[MiniMe] To enable ped scaling, update your FiveM server to artifact 5848 or later.')
+end
+
+-- Helper function to safely set ped scale
+local function SafeSetPedScale(ped, scale)
+    if hasPedScaling then
+        SetPedScale(ped, scale)
+        return true
+    else
+        -- Scaling not available in this build
+        return false
+    end
+end
+
 -- Function to get player's appearance data (works with qb-clothing, illenium-appearance, or fivem-appearance)
 local function GetPlayerAppearance()
     local appearance = nil
@@ -208,7 +226,7 @@ function SpawnMiniPed(scale, boneIndex, offset, animKey)
     -- Set scale
     scale = scale or Config.DefaultScale
     scale = math.max(Config.MinScale, math.min(Config.MaxScale, scale))
-    SetPedScale(ped, scale)
+    SafeSetPedScale(ped, scale)
     
     -- Attach to bone if specified
     if boneIndex then
@@ -303,7 +321,7 @@ function SpawnMiniPedForPlayer(serverSource, pedId, scale, boneIndex, offset, ap
     -- Set scale
     scale = scale or Config.DefaultScale
     scale = math.max(Config.MinScale, math.min(Config.MaxScale, scale))
-    SetPedScale(ped, scale)
+    SafeSetPedScale(ped, scale)
     
     -- Attach to bone if specified
     if boneIndex then
@@ -338,7 +356,7 @@ function UpdatePedScale(pedId, newScale)
     local myServerId = GetPlayerServerId(PlayerId())
     if spawnedPeds[myServerId] and spawnedPeds[myServerId][pedId] and DoesEntityExist(spawnedPeds[myServerId][pedId].ped) then
         newScale = math.max(Config.MinScale, math.min(Config.MaxScale, newScale))
-        SetPedScale(spawnedPeds[myServerId][pedId].ped, newScale)
+        SafeSetPedScale(spawnedPeds[myServerId][pedId].ped, newScale)
         spawnedPeds[myServerId][pedId].scale = newScale
         
         -- Trigger server event to broadcast to other clients
@@ -455,7 +473,7 @@ RegisterNetEvent('minime:client:updateScale', function(serverSource, pedId, newS
         local ped = spawnedPeds[serverSource][pedId].ped
         if DoesEntityExist(ped) then
             newScale = math.max(Config.MinScale, math.min(Config.MaxScale, newScale))
-            SetPedScale(ped, newScale)
+            SafeSetPedScale(ped, newScale)
             spawnedPeds[serverSource][pedId].scale = newScale
         end
     end
